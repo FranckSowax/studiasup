@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { db, supabase } from '@/lib/supabase';
 import { 
   User, 
   BookOpen, 
@@ -64,19 +65,19 @@ export default function EspaceEtudiant() {
   });
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(false);
-
-  // Données simulées
-  const student: Student = {
+  
+  // États pour les données utilisateur
+  const [student, setStudent] = useState<Student>({
     id: '2024001',
     firstName: 'Marie',
     lastName: 'NGUEMA',
     email: 'marie.nguema@studiasup.ga',
     program: 'Gestion Digitale & IA Créative',
     year: '2ème année',
-    avatar: '/images/avatar-placeholder.jpg'
-  };
+    avatar: '/api/placeholder/100/100'
+  });
 
-  const courses: Course[] = [
+  const [courses, setCourses] = useState<Course[]>([
     {
       id: '1',
       name: 'Design UX/UI Avancé',
@@ -109,9 +110,9 @@ export default function EspaceEtudiant() {
       nextClass: 'Jeudi 09h00',
       color: 'bg-orange-500'
     }
-  ];
+  ]);
 
-  const recentGrades: Grade[] = [
+  const [grades, setGrades] = useState<Grade[]>([
     {
       id: '1',
       course: 'Design UX/UI Avancé',
@@ -136,7 +137,7 @@ export default function EspaceEtudiant() {
       maxGrade: 20,
       date: '2024-06-22'
     }
-  ];
+  ]);
 
   const announcements: Announcement[] = [
     {
@@ -166,22 +167,77 @@ export default function EspaceEtudiant() {
     e.preventDefault();
     setLoading(true);
     
-    // Simulation de connexion
-    setTimeout(() => {
-      if (loginForm.email && loginForm.password) {
-        setIsLoggedIn(true);
-        setLoading(false);
-      } else {
-        alert('Veuillez remplir tous les champs');
-        setLoading(false);
+    try {
+      // Authentification avec Supabase
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: loginForm.email,
+        password: loginForm.password,
+      });
+      
+      if (authError) {
+        throw authError;
       }
-    }, 1500);
+      
+      if (authData.user) {
+        // Charger les données du tableau de bord
+        const dashboardData = await db.getStudentDashboard(authData.user.id);
+        
+        if (dashboardData.enrollments.data && !dashboardData.enrollments.error && dashboardData.user.data) {
+          // Mettre à jour les données avec les vraies données
+          setStudent({
+            id: authData.user.id,
+            firstName: dashboardData.user.data.first_name,
+            lastName: dashboardData.user.data.last_name,
+            email: dashboardData.user.data.email,
+            program: dashboardData.enrollments.data[0]?.courses?.programs?.name || 'Programme non défini',
+            year: '2ème année', // À calculer selon la date d'inscription
+            avatar: dashboardData.user.data.avatar_url || '/api/placeholder/100/100'
+          });
+          
+          // Transformer les cours
+          const transformedCourses = dashboardData.enrollments.data.map((enrollment: any) => ({
+            id: enrollment.course_id,
+            name: enrollment.courses?.name || 'Cours sans titre',
+            instructor: enrollment.courses?.teacher_id || 'Instructeur non défini',
+            progress: Math.floor(Math.random() * 100), // À calculer selon les devoirs terminés
+            nextClass: 'Prochaine session à définir',
+            color: ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500'][Math.floor(Math.random() * 4)]
+          }));
+          
+          setCourses(transformedCourses);
+          
+          // Transformer les notes
+          const transformedGrades = dashboardData.grades.data?.map((grade: any) => ({
+            id: grade.id,
+            course: grade.enrollments?.courses?.name || 'Cours',
+            assignment: grade.assignment_name,
+            grade: grade.score,
+            maxGrade: grade.max_score,
+            date: new Date(grade.assessment_date).toLocaleDateString('fr-FR')
+          })) || [];
+          
+          setGrades(transformedGrades);
+        }
+        
+        setIsLoggedIn(true);
+      }
+    } catch (error: any) {
+      console.error('Erreur de connexion:', error);
+      alert(error.message || 'Erreur de connexion. Vérifiez vos identifiants.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setLoginForm({ email: '', password: '' });
-    setActiveTab('dashboard');
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      setIsLoggedIn(false);
+      setLoginForm({ email: '', password: '' });
+      setActiveTab('dashboard');
+    } catch (error) {
+      console.error('Erreur lors de la déconnexion:', error);
+    }
   };
 
   // Formulaire de connexion
@@ -419,7 +475,7 @@ export default function EspaceEtudiant() {
                 </button>
               </div>
               <div className="space-y-3">
-                {recentGrades.map((grade) => (
+                {grades.map((grade: Grade) => (
                   <div key={grade.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
                     <div>
                       <h3 className="font-medium text-gray-900">{grade.assignment}</h3>

@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronDown, Upload, Check, AlertCircle } from 'lucide-react'
+import { db, supabase, type Program } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
 
 export default function CandidaturePage() {
   const [formData, setFormData] = useState({
@@ -34,12 +36,19 @@ export default function CandidaturePage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitSuccess, setSubmitSuccess] = useState(false)
 
-  const formations = [
-    'Gestion Digitale & IA Créative',
-    'Agrotech & IA appliquée à l\'agriculture', 
-    'Business Numérique & Transformation Digitale des PME',
-    'Intelligence Artificielle - Programme général'
-  ]
+  const [programs, setPrograms] = useState<Program[]>([])
+  const router = useRouter()
+
+  // Charger les programmes depuis la base de données
+  useEffect(() => {
+    const loadPrograms = async () => {
+      const { data, error } = await db.getPrograms()
+      if (data && !error) {
+        setPrograms(data)
+      }
+    }
+    loadPrograms()
+  }, [])
 
   const niveauxEtude = [
     'Baccalauréat',
@@ -70,11 +79,60 @@ export default function CandidaturePage() {
     e.preventDefault()
     setIsSubmitting(true)
     
-    // Simulation d'envoi
-    setTimeout(() => {
-      setIsSubmitting(false)
+    try {
+      // Vérifier si l'utilisateur est connecté
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      let userId = user?.id
+      
+      // Si pas connecté, créer un compte temporaire
+      if (!userId) {
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: formData.email,
+          password: Math.random().toString(36).slice(-8), // Mot de passe temporaire
+        })
+        
+        if (authError) throw authError
+        userId = authData.user?.id
+        
+        // Créer le profil utilisateur
+        if (userId) {
+          await supabase.from('users').insert({
+            id: userId,
+            email: formData.email,
+            first_name: formData.prenom,
+            last_name: formData.nom,
+            phone: formData.telephone,
+            date_of_birth: formData.dateNaissance,
+            nationality: formData.nationalite,
+            address: formData.adresse,
+            city: formData.ville,
+            role: 'student'
+          })
+        }
+      }
+      
+      // Créer la candidature
+      if (userId) {
+        const { error: applicationError } = await db.createApplication({
+          user_id: userId,
+          program_id: formData.formation,
+          session: 'session_1',
+          motivation_letter: formData.motivation,
+          career_goals: formData.projetProfessionnel,
+          status: 'pending'
+        })
+        
+        if (applicationError) throw applicationError
+      }
+      
       setSubmitSuccess(true)
-    }, 2000)
+    } catch (error) {
+      console.error('Erreur lors de la soumission:', error)
+      alert('Une erreur est survenue lors de l\'envoi de votre candidature. Veuillez réessayer.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const nextStep = () => {
@@ -265,8 +323,8 @@ export default function CandidaturePage() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   >
                     <option value="">Sélectionnez une formation</option>
-                    {formations.map((formation) => (
-                      <option key={formation} value={formation}>{formation}</option>
+                    {programs.map((program) => (
+                      <option key={program.id} value={program.id}>{program.name}</option>
                     ))}
                   </select>
                 </div>

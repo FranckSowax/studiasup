@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { db } from '@/lib/supabase'
 import { 
   Mail, 
   Phone, 
@@ -101,17 +102,44 @@ export default function Contact() {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    phone: '',
     subject: '',
     message: '',
     type: 'general'
   })
   const [isSubmitted, setIsSubmitted] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Simulation d'envoi
-    setIsSubmitted(true)
-    setTimeout(() => setIsSubmitted(false), 3000)
+    
+    try {
+      // Sauvegarder le message dans Supabase
+      const { error } = await db.createContact({
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        subject: formData.subject,
+        message: formData.message,
+        status: 'new'
+      })
+      
+      if (error) throw error
+      
+      setIsSubmitted(true)
+      // Réinitialiser le formulaire
+      setFormData({
+        name: '',
+        email: '',
+        phone: '',
+        subject: '',
+        message: '',
+        type: 'general'
+      })
+      setTimeout(() => setIsSubmitted(false), 3000)
+    } catch (error) {
+      console.error('Erreur lors de l\'envoi:', error)
+      alert('Une erreur est survenue lors de l\'envoi de votre message. Veuillez réessayer.')
+    }
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {

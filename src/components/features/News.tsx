@@ -2,8 +2,9 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Calendar, User, ArrowRight, Tag } from 'lucide-react'
+import { db, type News as NewsType } from '@/lib/supabase'
 
 const news = [
   {
@@ -56,11 +57,45 @@ const categories = ['Tous', 'Partenariats', 'Étudiants', 'Campus', 'Internation
 
 export default function News() {
   const [selectedCategory, setSelectedCategory] = useState('Tous')
+  const [newsData, setNewsData] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   
-  const featuredNews = news.find(item => item.featured)
+  // Charger les actualités depuis Supabase
+  useEffect(() => {
+    const loadNews = async () => {
+      try {
+        const { data, error } = await db.getPublishedNews(10) // Charger 10 actualités
+        if (data && !error) {
+          // Transformer les données pour correspondre au format attendu
+          const transformedData = data.map(item => ({
+            ...item,
+            featured: item.is_featured,
+            image: item.image_url || 'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=600&h=400&fit=crop',
+            author: item.users ? `${item.users.first_name} ${item.users.last_name}` : 'Équipe Sup Studia',
+            date: new Date(item.published_at || item.created_at).toLocaleDateString('fr-FR', {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric'
+            }),
+            readTime: `${Math.ceil(item.content.length / 1000)} min`
+          }))
+          setNewsData(transformedData as any[])
+        }
+      } catch (error) {
+        console.error('Erreur lors du chargement des actualités:', error)
+        // Fallback sur les données statiques en cas d'erreur
+        setNewsData(news as any[])
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadNews()
+  }, [])
+  
+  const featuredNews = newsData.find(item => item.featured)
   const filteredNews = selectedCategory === 'Tous' 
-    ? news.filter(item => !item.featured)
-    : news.filter(item => !item.featured && item.category === selectedCategory)
+    ? newsData.filter(item => !item.featured)
+    : newsData.filter(item => !item.featured && item.category === selectedCategory)
 
   return (
     <section className="section-padding bg-white">
